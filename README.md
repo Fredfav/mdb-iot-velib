@@ -119,3 +119,7 @@ After creating two data sources for the views in MongoDB (see below for a descri
 * Geo Heatmap (based on the view v_avg_hourly_utilization):
 ![](config_util_step1.png)
 ![](config_util_step2.png)
+
+## To Do
+* Machine learning integration by predicting the availability of Velib on different stations.
+* Integration with a rules engine (i.e Drools)
