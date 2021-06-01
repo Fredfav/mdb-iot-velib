@@ -1,0 +1,117 @@
+// MongoDB Playground
+// To disable this template go to Settings | MongoDB | Use Default Template For Playground.
+// Make sure you are connected to enable completions and to be able to run a playground.
+// Use Ctrl+Space inside a snippet or a string literal to trigger completions.
+
+// Select the database to use.
+use('velib');
+
+//
+// Run a find command to find the number of stations having a capacity greater than 30 bikes.
+//
+use('velib');
+db.stations.find({capacity: {$gte: 30}}).count();
+
+//
+// Build an aggregation to view the status of the stations.
+//
+use('velib');
+const lookup = {$lookup: {
+  from: 'status',
+  localField: '_id',
+  foreignField: 'station_id',
+  as: 'status'
+}}
+
+const project = {$project: {
+  _id:0,
+  name:1,
+  status: 1
+}}
+
+const aggregation = [lookup, project];
+db.stations.aggregate(aggregation);
+
+//
+// Retreive all velib stations starting with repub
+// 
+use('velib');
+const search = {$search: {
+  index: "default",
+  autocomplete: {
+    query: 'repub',
+    path: 'name',
+    tokenOrder: "any"
+  }
+}}
+
+const project = {$project: {
+  name: 1,
+  station_id: 1,
+  score: {
+    "$meta": "searchScore"
+  }
+}}
+
+const aggregation = [search, project];
+db.stations.aggregate(aggregation);
+
+//
+// Date manipulation 
+//
+use('velib')
+const project = {$project: {
+  _id: 0,
+  station_id: 1,
+  date: {$dateToParts: { date: "$max_ts" }}
+}}
+const group = {$group: {
+  _id: "$date.second",
+  station_id: {
+    "$addToSet": "$station_id"
+  }
+}}
+
+const aggregation = [project, group];
+db.status.aggregate(aggregation);
+
+//
+// Display the bike availability per station
+//
+use('velib');
+// force index usage
+const sort_index = { '$sort': { station_id: 1, min_ts: 1, max_ts: 1 } }
+// get the latest entry per station
+const group = { '$group': { 
+ _id: { station_id: '$station_id' }, 
+  latest_status: { '$last': '$status.num_bikes_available' }
+}}
+// only keep the latest one
+const addField =  { '$addFields': { latest_status: { '$arrayElemAt': [ '$latest_status', -1 ] } } }
+// get the station metadata: name and capacity
+const lookup = { '$lookup': {
+  from: 'stations', 
+  localField: '_id.station_id', 
+  foreignField: '_id', 
+  as: 'station'
+} }
+// one station per id
+const unwind = { '$unwind': '$station' }
+//format output and compute availability ratio
+const project = { '$project': {
+  _id: 0, 
+  //station_id: '$_id.station_id', 
+  station_name: '$station.name',
+  station_capacity: '$station.capacity', 
+  station_bikes_available: '$latest_status', 
+  station_availability: {
+    '$cond': [
+    // Some stations have a capcity of 0, avoid divide by zero
+    { '$gt': [ '$station.capacity', 0 ] },
+    { '$round': [ { '$multiply': [ { '$divide': [ '$latest_status', '$station.capacity' ] }, 100 ] }, 2 ] }, 0] }
+} }
+// order by availability
+const sort = {'$sort': {'station_availability': 1}}
+
+const aggregation = [sort_index, group, addField, lookup, unwind, project, sort];
+db.status.aggregate(aggregation);
